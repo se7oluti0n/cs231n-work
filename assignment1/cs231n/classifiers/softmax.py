@@ -29,14 +29,53 @@ def softmax_loss_naive(W, X, y, reg):
   # here, it is easy to run into numeric instability. Don't forget the        #
   # regularization!                                                           #
   #############################################################################
-  pass
+  num_train = X.shape[0]
+  num_class = W.shape[1]
+  num_dim = X.shape[1]
+
+  for i in xrange(num_train):
+    # Array 1xC    
+    scores = X[i].dot(W)
+    
+    scores -= np.max(scores)
+    # Scalar
+    correct_class_score = scores[y[i]]
+    dCdW = np.zeros_like(W)
+    dCdW[:, y[i]] = X[i]
+    
+    dSdW = np.tile(X[i], (num_class, 1)).T
+    
+    
+    # Scalar
+    exp_correct =  np.exp(correct_class_score)
+    
+    dECdC = exp_correct
+    dECdW = dECdC * dCdW
+    
+    # Vector 1xC
+    exp_all = np.exp(scores)
+    dEWdS = exp_all
+    dEWdW = dEWdS * dSdW
+      
+    loss += np.log(np.sum(exp_all)) - correct_class_score
+    
+    dLidW = 1 / np.sum(exp_all) * dEWdW - dCdW
+    
+    dW += dLidW
+    
   #############################################################################
   #                          END OF YOUR CODE                                 #
   #############################################################################
 
+  loss /= num_train
+  loss += 0.5 * reg * np.sum(W * W)
+  
+  dW /= num_train
+  dW += reg * W
+    
   return loss, dW
 
-
+  
 def softmax_loss_vectorized(W, X, y, reg):
   """
   Softmax loss function, vectorized version.
@@ -53,7 +92,38 @@ def softmax_loss_vectorized(W, X, y, reg):
   # here, it is easy to run into numeric instability. Don't forget the        #
   # regularization!                                                           #
   #############################################################################
-  pass
+  num_train = X.shape[0]
+  num_class = W.shape[1]
+  num_dim = X.shape[1]
+  
+  scores = X.dot(W)
+  max_scores = np.max(scores, axis=1)
+  normalized_scores = scores - max_scores[:, None]
+
+  dScoresdW = X.T
+    
+  correct_scores = normalized_scores[np.arange(num_train), y]
+    
+  labels = (np.arange(W.shape[1]) == y[:,None]).astype(np.float32)
+  
+  dCdW = dScoresdW.dot(labels)
+   
+  exp_all = np.exp(normalized_scores)
+  sum_exp_all = np.sum(exp_all, axis=1)
+    
+  loss = np.sum(np.log(sum_exp_all) - correct_scores)
+  
+  dLogSumdW = dScoresdW.dot( exp_all / sum_exp_all[:,None])
+  
+  dW += dLogSumdW - dCdW
+
+  loss /= num_train  
+  loss += 0.5 * reg * np.sum(W * W)
+
+  dW /= num_train
+  dW += reg * W
+  
+  
   #############################################################################
   #                          END OF YOUR CODE                                 #
   #############################################################################
