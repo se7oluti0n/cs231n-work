@@ -29,14 +29,52 @@ def softmax_loss_naive(W, X, y, reg):
   # here, it is easy to run into numeric instability. Don't forget the        #
   # regularization!                                                           #
   #############################################################################
-  pass
+  num_train = X.shape[0]
+  num_class = W.shape[1]
+  num_dim = X.shape[1]
+
+  for i in xrange(num_train):
+    scores = X[i].dot(W)
+    
+    correct_class_score = scores[y[i]]
+    dCdW = np.zeros_like(W)
+    dCdW[:, y[i]] = X[i]
+    
+    dSdW = np.tile(X[i], (num_class, 1)).T
+    
+    exp_correct =  np.exp(correct_class_score)
+    
+    dECdC = exp_correct
+    dECdW = dECdC * dCdW
+    
+    exp_all = np.exp(scores)
+    dEWdS = exp_all 
+    dEWdW = dEWdS * dSdW
+    
+    softmax = exp_correct / np.sum(exp_all)
+    
+    dSoftmaxdW = dECdW / exp_all - exp_correct * dEWdW / (exp_all * exp_all)
+    
+    loss -= np.log(softmax)
+    
+    dLdSoftmax = -1 / softmax
+    dLdW = dSoftmaxdW * dLdSoftmax
+    
+    dW += dLdW
+    
   #############################################################################
   #                          END OF YOUR CODE                                 #
   #############################################################################
 
+  loss /= num_train
+  loss += 0.5 * reg * np.sum(W * W)
+  
+  dW /= num_train
+  dW += reg * W
+    
   return loss, dW
 
-
+  
 def softmax_loss_vectorized(W, X, y, reg):
   """
   Softmax loss function, vectorized version.
