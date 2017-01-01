@@ -56,7 +56,7 @@ def softmax_loss_naive(W, X, y, reg):
     exp_all = np.exp(scores)
     dEWdS = exp_all
     dEWdW = dEWdS * dSdW
-      
+         
     loss += np.log(np.sum(exp_all)) - correct_class_score
     
     dLidW = 1 / np.sum(exp_all) * dEWdW - dCdW
@@ -92,6 +92,7 @@ def softmax_loss_vectorized(W, X, y, reg):
   # here, it is easy to run into numeric instability. Don't forget the        #
   # regularization!                                                           #
   #############################################################################
+    
   num_train = X.shape[0]
   num_class = W.shape[1]
   num_dim = X.shape[1]
