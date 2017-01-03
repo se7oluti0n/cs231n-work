@@ -188,7 +188,21 @@ class FullyConnectedNet(object):
     # beta2, etc. Scale parameters should be initialized to one and shift      #
     # parameters should be initialized to zero.                                #
     ############################################################################
-    pass
+
+    hidden_dims.insert(0, input_dim)
+    hidden_dims.append(num_classes)
+    for i in xrange(1, len(hidden_dims)):
+        self.params['W'+ str(i)] = weight_scale * np.random.randn(hidden_dims[i-1], hidden_dims[i])
+        self.params['b'+ str(i)] = np.zeros(hidden_dims[i])
+
+    
+    
+    if self.use_batchnorm:
+        for i in xrange(1, len(hidden_dims) - 1):
+            self.params['gamma'+ str(i)] = 1
+            self.params['beta' + str(i)] = 0
+
+
     ############################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
@@ -246,7 +260,22 @@ class FullyConnectedNet(object):
     # self.bn_params[1] to the forward pass for the second batch normalization #
     # layer, etc.                                                              #
     ############################################################################
-    pass
+    mat_in = X
+    caches = []
+    relu_caches = []
+    for i in xrange(1, self.num_layers + 1):
+        w = self.params['W'+str(i)]
+        b = self.params['b'+str(i)]
+        p, cache = affine_forward(mat_in, w, b)
+        relu_caches.append(p)
+
+        if i < self.num_layers:
+            p, _ = relu_forward(p)
+
+        mat_in = p
+        caches.append(cache)
+    scores = mat_in
+
     ############################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
@@ -270,6 +299,29 @@ class FullyConnectedNet(object):
     # of 0.5 to simplify the expression for the gradient.                      #
     ############################################################################
     pass
+    loss, dLoss = softmax_loss(scores, y)
+
+    sum_reg = 0
+    for i in xrange(1, self.num_layers + 1):
+        w = self.params['W'+str(i)]
+        b = self.params['b'+str(i)]
+        sum_reg += np.sum(w*w) + np.sum(b*b)
+    loss += 0.5 * self.reg * sum_reg 
+
+    din = dLoss
+    for i in reversed(xrange(1, self.num_layers + 1)):
+        
+        x, w, b = caches[i-1]
+        if i == self.num_layers:
+            dx, dw, db = affine_backward(din, caches[i-1])
+        else:
+            dRelu = relu_backward(din, relu_caches[i-1]) 
+            dx, dw, db = affine_backward(dRelu, caches[i-1])
+        
+        grads['W'+str(i)] = dw + self.reg * w 
+        grads['b'+str(i)] = db + self.reg * b 
+        din = dx
+
     ############################################################################
     #                             END OF YOUR CODE                             #
     ############################################################################
