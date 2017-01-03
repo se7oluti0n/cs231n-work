@@ -112,7 +112,7 @@ class TwoLayerNet(object):
     # First layer
 
     loss, dLoss = softmax_loss(scores, y)
-    loss += 0.5 * self.reg * (np.sum(W1 * W1) + np.sum(b1 * b1) + np.sum(W2 * W2) + np.sum(b2 * b2))
+    loss += 0.5 * self.reg * (np.sum(W1 * W1) + np.sum(W2 * W2) )
 
     dRelu, dW2, db2 = affine_backward(dLoss, score_cache)
     dFc1 = relu_backward(dRelu, relu_cache)
@@ -304,7 +304,6 @@ class FullyConnectedNet(object):
     sum_reg = 0
     for i in xrange(1, self.num_layers + 1):
         w = self.params['W'+str(i)]
-        b = self.params['b'+str(i)]
         sum_reg += np.sum(w*w) + np.sum(b*b)
     loss += 0.5 * self.reg * sum_reg 
 
