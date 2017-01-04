@@ -263,14 +263,19 @@ class FullyConnectedNet(object):
     mat_in = X
     caches = []
     relu_caches = []
+    dropout_caches = []
     for i in xrange(1, self.num_layers + 1):
         w = self.params['W'+str(i)]
         b = self.params['b'+str(i)]
         p, cache = affine_forward(mat_in, w, b)
-        relu_caches.append(p)
 
         if i < self.num_layers:
-            p, _ = relu_forward(p)
+            p, relu_cache = relu_forward(p)
+            relu_caches.append(relu_cache)
+            
+            if self.use_dropout:
+                p, drop_cache = dropout_forward(p, self.dropout_param)
+                dropout_caches.append(drop_cache)
 
         mat_in = p
         caches.append(cache)
@@ -314,7 +319,11 @@ class FullyConnectedNet(object):
         if i == self.num_layers:
             dx, dw, db = affine_backward(din, caches[i-1])
         else:
-            dRelu = relu_backward(din, relu_caches[i-1]) 
+            dDrop = din
+            if self.use_dropout:
+                dDrop = dropout_backward(din, dropout_caches[i-1])
+
+            dRelu = relu_backward(dDrop, relu_caches[i-1]) 
             dx, dw, db = affine_backward(dRelu, caches[i-1])
         
         grads['W'+str(i)] = dw + self.reg * w 
