@@ -229,6 +229,11 @@ def batchnorm_backward(dout, cache):
   # TODO: Implement the backward pass for batch normalization. Store the      #
   # results in the dx, dgamma, and dbeta variables.                           #
   #############################################################################
+
+
+  ### Excellent explanation at : 
+  ### http://kratzert.github.io/2016/02/12/understanding-the-gradient-flow-through-the-batch-normalization-layer.html
+
   x, mean, var, x_normalized, gamma = cache
   N = x.shape[0]
   dgamma = np.sum(dout * x_normalized, axis=0)
@@ -236,11 +241,17 @@ def batchnorm_backward(dout, cache):
 
   dNormal = dout * gamma[None, :]
   
-  dCenter = dNormal * 1.0 / np.sqrt(var)
-  dVar = dNormal * (x - mean) * (-0.5) / (var * np.sqrt(var))
+  dCenter1 = dNormal * 1.0 / np.sqrt(var)
+  dSqrtvar = np.sum(dNormal * (x - mean[None, :]), axis=0) * (-1) / var
 
-  dMean = dCenter * 1.0 / float(N) 
-  dx = dCenter - dMean + dVar * 2 * (x - mean) * (dCenter - dMean) / float(N)
+  dVar = dSqrtvar * 0.5 / np.sqrt(var)
+  dSquare = 1 / float(N) * dVar
+  dCenter2 = dSquare * 2 * (x - mean[None, :])
+  dCenter = dCenter1 + dCenter2
+  dx1 = dCenter
+  dmu = 1 / float(N) * np.sum(dCenter, axis=0)
+  dx2 = dmu
+  dx = dx1 - dx2
     
   
   #############################################################################
