@@ -189,8 +189,7 @@ class FullyConnectedNet(object):
     # parameters should be initialized to zero.                                #
     ############################################################################
 
-    hidden_dims.insert(0, input_dim)
-    hidden_dims.append(num_classes)
+    hidden_dims = [input_dim] + hidden_dims + [num_classes]
     for i in xrange(1, len(hidden_dims)):
         self.params['W'+ str(i)] = weight_scale * np.random.randn(hidden_dims[i-1], hidden_dims[i])
         self.params['b'+ str(i)] = np.zeros(hidden_dims[i])
@@ -198,9 +197,11 @@ class FullyConnectedNet(object):
     
     
     if self.use_batchnorm:
-        for i in xrange(1, len(hidden_dims) - 1):
-            self.params['gamma'+ str(i)] = 1
-            self.params['beta' + str(i)] = 0
+        gammas = { 'gamma' + str(i): np.ones(hidden_dims[i]) for i in xrange(1, self.num_layers)} 
+        betas = { 'beta' + str(i): np.zeros(hidden_dims[i]) for i in xrange(1, self.num_layers)} 
+
+        self.params.update(gammas)
+        self.params.update(betas)
 
 
     ############################################################################
@@ -264,12 +265,20 @@ class FullyConnectedNet(object):
     caches = []
     relu_caches = []
     dropout_caches = []
+    bn_caches = []
     for i in xrange(1, self.num_layers + 1):
         w = self.params['W'+str(i)]
         b = self.params['b'+str(i)]
+
         p, cache = affine_forward(mat_in, w, b)
 
         if i < self.num_layers:
+            if self.use_batchnorm:
+                gamma = self.params['gamma' + str(i)]
+                beta = self.params['beta' + str(i)]
+                p, bn_cache = batchnorm_forward(p, gamma, beta, self.bn_params[i-1])
+                bn_caches.append(bn_cache)
+
             p, relu_cache = relu_forward(p)
             relu_caches.append(relu_cache)
             
@@ -324,6 +333,12 @@ class FullyConnectedNet(object):
                 dDrop = dropout_backward(din, dropout_caches[i-1])
 
             dRelu = relu_backward(dDrop, relu_caches[i-1]) 
+
+            if self.use_batchnorm:
+                dRelu, dgamma, dbeta = batchnorm_backward_alt(dRelu, bn_caches[i-1])
+                grads['gamma'+str(i)] = dgamma 
+                grads['beta'+str(i)] = dbeta 
+
             dx, dw, db = affine_backward(dRelu, caches[i-1])
         
         grads['W'+str(i)] = dw + self.reg * w 
