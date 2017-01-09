@@ -4,6 +4,152 @@ from cs231n.layers import *
 from cs231n.fast_layers import *
 from cs231n.layer_utils import *
 
+class FirstConvnet(object):
+  """
+  { conv-[batchnorm]-relu- [dropout] - pool} x N - conv - [batchnorm] - relu - [dropout] - {affine - [batch norm] - relu - [dropout]} x (M - 1) - affine - [softmax or SVM]
+
+  The network operates on minibatches of data that have shape (N,C,H,W)
+  consisting of N images, each with height H and width W and with C of channels
+  """
+
+  def __init__(self, input_dim=(3,32,32), num_filters=[1], filter_sizes=[7],
+               hidden_dims=[100], num_classes=10, use_batchnorm=False, dropout=0, 
+               weight_scale=1e-3, reg=0.0, dtype=np.float32):
+    """
+    Initialize the network
+
+    Inputs:
+      - input_dim: Tuple (C,H,W) giving size of input data
+      - num_filters: Lists of interger giving the number of filters in each convolutional layer
+      - filter_size: List of interger giving the filter size in each convolutional layers
+      - hidden_dims: List of integer giving the size of each full-connected hidden layer
+      - num_classes: Number of scores to produce the final affine layer
+      - use_batchnorm: Whether or not using batchnorm
+      - dropout: dropout strength. if dropout=0 the not use dropout at all 
+      - weight_scale: Scalr giving the standard deviation for random initialization of weights
+      - reg: Scalar giving L2 relularization strength
+      - dtype: numpy datatype to use for computation
+    """
+
+    self.use_batchnorm = use_batchnorm
+    self.use_dropout = dropout > 0
+    self.reg = reg
+    self.num_fullconnected = 1 + len(hidden_dims)
+    self.num_conv = len(num_filters)
+    self.num_layers = self.num_fullconnected + self.num_conv
+    self.params = {}
+    self.conv_params = []
+    self.pool_params = []
+    self.reg = reg
+
+    
+    num_filters = [input_dim[0]] + num_filters
+
+    for i in xrange(1, len(num_filters)):
+      self.params['W'+str(i)] = weight_scale * np.random.randn(num_filters[i], num_filters[i-1], filter_sizes[i-1], filter_sizes[i-1])
+      self.params['b'+str(i)] = np.zeros(num_filters[i])
+      self.conv_params.append({'stride': 1, 'pad': (num_filters[-1] - 1) / 2})
+      if (i < self.num_conv):
+        self.pool_params.append({'stride' : 2, 'pool_width': 2, 'pool_height': 2})
+
+
+
+    last_convolution_size = num_filters[-1] * input_dim[1] * input_dim[2] / (2 ** (2 * self.num_conv - 2))
+    hidden_dims = [last_convolution_size] + hidden_dims + [num_classes]
+
+    for i in xrange(len(num_filters) + 1, len(num_filters) +  len(hidden_dims)):
+        true_index = i - len(num_filters)
+        self.params['W'+ str(i - 1)] = weight_scale * np.random.randn(hidden_dims[true_index - 1], hidden_dims[true_index])
+        self.params['b'+ str(i - 1)] = np.zeros(hidden_dims[true_index])
+
+    if self.use_batchnorm:
+        conv_gammas = { 'gamma' + str(i): np.ones(num_filters[i]) for i in xrange(1, self.num_conv + 1)} 
+        conv_betas = { 'beta' + str(i): np.zeros(num_filters[i]) for i in xrange(1, self.num_conv + 1)} 
+
+        gammas = { 'gamma' + str(i-1): np.ones(hidden_dims[i - len(num_filters)]) for i in xrange(1+len(num_filters), len(num_filters) +  len(hidden_dims) - 1)} 
+        betas = { 'beta' + str(i-1): np.zeros(hidden_dims[i - len(num_filters)]) for i in xrange(1+len(num_filters), len(num_filters) +  len(hidden_dims) - 1)} 
+
+        self.params.update(conv_gammas)
+        self.params.update(conv_betas)
+        self.params.update(gammas)
+        self.params.update(betas)
+
+    # When using dropout we need to pass a dropout_param dictionary to each
+    # dropout layer so that the layer knows the dropout probability and the mode
+    # (train / test). You can pass the same dropout_param to each dropout layer.
+    self.dropout_param = {}
+    if self.use_dropout:
+      self.dropout_param = {'mode': 'train', 'p': dropout}
+      if seed is not None:
+        self.dropout_param['seed'] = seed
+    
+    # With batch normalization we need to keep track of running means and
+    # variances, so we need to pass a special bn_param object to each batch
+    # normalization layer. You should pass self.bn_params[0] to the forward pass
+    # of the first batch normalization layer, self.bn_params[1] to the forward
+    # pass of the second batch normalization layer, etc.
+    self.bn_params = []
+    if self.use_batchnorm:
+      self.bn_params = [{'mode': 'train'} for i in xrange(self.num_layers - 1)]
+    
+    # Cast all parameters to the correct datatype
+    for k, v in self.params.iteritems():
+      self.params[k] = v.astype(dtype)
+
+  def loss(self, X, y=None):
+
+    ## Forward 
+    conv_out = None
+    x_in = X
+
+    conv_caches = []
+    bn_caches1 = []
+    relu_caches1 = []
+    pool_caches = []
+    dropout_caches1 = []
+
+    for i in xrange(self.num_conv):
+      conv_out, conv_cache = conv_forward_fast(X, self.params['W' + str(i+1)], 
+                                  self.params['b' + str(i+1)], self.conv_params[i])
+      if self.use_batchnorm:
+        conv_out, bn_cache = spatial_batchnorm_forward(conv_out, self.params['gamma' + str(i+1)], self.params['beta'+str(i+1)], self.bn_params[i])
+
+      conv_out, relu_cache = relu_forward(out)
+      if i < self.num_conv-1:
+        conv_out, pool_cache = max_pool_forward_fast(out, self.pool_params[i])
+      
+      if self.use_dropout:
+        conv_out, dropout_cache = dropout_forward(out, dropout_param)
+
+
+    mat_in = conv_out.reshape(X.shape[0], -1)
+    scores = None
+
+    affine_caches = []
+    relu_caches2 = []
+    bn_caches2 = []
+    dropout_caches2 = []
+    for i in xrange(self.num_fullconnected):
+        p, affine_cache = affine_forward(mat_in, self.params['W'+str(i+1+self.num_conv)], self.params['b'+str(i+1+self.num_conv)])
+        affine_caches.append(affine_cache)
+
+        if i < self.num_fullconnected - 1:
+            if self.use_batchnorm:
+                gamma = self.params['gamma' + str(i + 1 + self.num_conv)]
+                beta = self.params['beta' + str(i + 1 + self.num_conv)]
+                
+                p, bn_cache = batchnorm_forward(p, gamma, beta, self.bn_params[i + self.num_conv])
+                bn_caches.append(bn_cache)
+
+            p, relu_cache = relu_forward(p)
+            relu_caches.append(relu_cache)
+            
+            if self.use_dropout:
+                p, drop_cache = dropout_forward(p, self.dropout_param)
+                dropout_caches.append(drop_cache)
+
+        mat_in = p
+    scores = mat_in
 
 class ThreeLayerConvNet(object):
   """
