@@ -14,7 +14,7 @@ class FirstConvnet(object):
 
   def __init__(self, input_dim=(3,32,32), num_filters=[1], filter_sizes=[7],
                hidden_dims=[100], num_classes=10, use_batchnorm=False, dropout=0, 
-               weight_scale=1e-3, reg=0.0, dtype=np.float32):
+               weight_scale=1e-3, reg=0.0, dtype=np.float32, seed=None):
     """
     Initialize the network
 
@@ -48,7 +48,7 @@ class FirstConvnet(object):
     for i in xrange(1, len(num_filters)):
       self.params['W'+str(i)] = weight_scale * np.random.randn(num_filters[i], num_filters[i-1], filter_sizes[i-1], filter_sizes[i-1])
       self.params['b'+str(i)] = np.zeros(num_filters[i])
-      self.conv_params.append({'stride': 1, 'pad': (num_filters[-1] - 1) / 2})
+      self.conv_params.append({'stride': 1, 'pad': (filter_sizes[i-1] - 1) / 2})
       if (i < self.num_conv):
         self.pool_params.append({'stride' : 2, 'pool_width': 2, 'pool_height': 2})
 
@@ -108,19 +108,30 @@ class FirstConvnet(object):
     pool_caches = []
     dropout_caches1 = []
 
+    mat_in = X
     for i in xrange(self.num_conv):
-      conv_out, conv_cache = conv_forward_fast(X, self.params['W' + str(i+1)], 
+      conv_out, conv_cache = conv_forward_fast(mat_in, self.params['W' + str(i+1)], 
                                   self.params['b' + str(i+1)], self.conv_params[i])
-      if self.use_batchnorm:
-        conv_out, bn_cache = spatial_batchnorm_forward(conv_out, self.params['gamma' + str(i+1)], self.params['beta'+str(i+1)], self.bn_params[i])
+      conv_caches.append(conv_cache)
 
-      conv_out, relu_cache = relu_forward(out)
+      if self.use_batchnorm:
+        conv_out, bn_cache = spatial_batchnorm_forward(conv_out, self.params['gamma' + str(i+1)],
+                                  self.params['beta'+str(i+1)], self.bn_params[i])
+        bn_caches1.append(bn_cache)
+
+      conv_out, relu_cache = relu_forward(conv_out)
+
+      relu_caches1.append(relu_cache)
+
       if i < self.num_conv-1:
-        conv_out, pool_cache = max_pool_forward_fast(out, self.pool_params[i])
+        conv_out, pool_cache = max_pool_forward_fast(conv_out, self.pool_params[i])
+        pool_caches.append(pool_cache)
       
       if self.use_dropout:
-        conv_out, dropout_cache = dropout_forward(out, dropout_param)
+        conv_out, dropout_cache = dropout_forward(conv_out, self.dropout_param)
+        dropout_caches1.append(dropout_cache)
 
+      mat_in = conv_out
 
     mat_in = conv_out.reshape(X.shape[0], -1)
     scores = None
@@ -129,6 +140,7 @@ class FirstConvnet(object):
     relu_caches2 = []
     bn_caches2 = []
     dropout_caches2 = []
+
     for i in xrange(self.num_fullconnected):
         p, affine_cache = affine_forward(mat_in, self.params['W'+str(i+1+self.num_conv)], self.params['b'+str(i+1+self.num_conv)])
         affine_caches.append(affine_cache)
@@ -139,17 +151,78 @@ class FirstConvnet(object):
                 beta = self.params['beta' + str(i + 1 + self.num_conv)]
                 
                 p, bn_cache = batchnorm_forward(p, gamma, beta, self.bn_params[i + self.num_conv])
-                bn_caches.append(bn_cache)
+                bn_caches2.append(bn_cache)
 
             p, relu_cache = relu_forward(p)
-            relu_caches.append(relu_cache)
+            relu_caches2.append(relu_cache)
             
             if self.use_dropout:
                 p, drop_cache = dropout_forward(p, self.dropout_param)
-                dropout_caches.append(drop_cache)
+                dropout_caches2.append(drop_cache)
 
         mat_in = p
     scores = mat_in
+    if y is None:
+        return scores
+
+    loss, grads = 0, {}
+
+    loss, dLoss = softmax_loss(scores, y)
+
+    sum_reg = 0
+    for i in xrange(self.num_fullconnected):
+        w = self.params['W'+str(i + 1 + self.num_conv)]
+        b = self.params['b'+str(i + 1 + self.num_conv)]
+
+        sum_reg += np.sum(w*w) + np.sum(b*b)
+
+    loss += 0.5 * self.reg * sum_reg 
+#
+    din = dLoss
+    for i in reversed(xrange(self.num_fullconnected)):
+
+        p_index = i + 1 + self.num_conv
+        if i < self.num_fullconnected - 1:
+            if self.use_dropout:
+                din = dropout_backward(din, dropout_caches2[i])
+
+            din = relu_backward(din, relu_caches2[i]) 
+
+            if self.use_batchnorm:
+                din, dgamma, dbeta = batchnorm_backward_alt(din, bn_caches2[i])
+                grads['gamma'+str(p_index)] = dgamma 
+                grads['beta'+str(p_index)] = dbeta 
+
+        x, w, b = affine_caches[i]
+        dx, dw, db = affine_backward(din, affine_caches[i])
+        
+        grads['W'+str(p_index)] = dw + self.reg * w 
+        grads['b'+str(p_index)] = db + self.reg * b 
+        din = dx
+
+    dFc = din.reshape(conv_out.shape)
+
+    for i in reversed(xrange(self.num_conv)):
+
+      if self.use_dropout:
+        dFc = dropout_backward(dFc, dropout_caches1[i])
+
+      if i < self.num_conv - 1:
+        dFc = max_pool_backward_fast(dFc, pool_caches[i])
+
+
+      dFc = relu_backward(dFc, relu_caches1[i])
+      if self.use_batchnorm:
+        dFc, dgamma, dbeta = spatial_batchnorm_backward(dFc, bn_caches1[i])
+        grads['gamma'+str(i+1)] = dgamma 
+        grads['beta'+str(i+1)] = dbeta 
+
+      dFc, dw, db = conv_backward_fast(dFc, conv_caches[i])
+
+      grads['W' + str(i+1)] = dw
+      grads['b' + str(i+1)] = db
+
+    return loss, grads
 
 class ThreeLayerConvNet(object):
   """
